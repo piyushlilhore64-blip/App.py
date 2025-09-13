@@ -1,60 +1,70 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import os
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "supersecretkey")  # from Render env vars
 
-# Load users from JSON
+USER_FILE = "users.json"
+
+# Load users
 def load_users():
-    with open("users.json", "r") as f:
+    if not os.path.exists(USER_FILE):
+        return []
+    with open(USER_FILE, "r") as f:
         return json.load(f)
 
+# Save users
 def save_users(users):
-    with open("users.json", "w") as f:
+    with open(USER_FILE, "w") as f:
         json.dump(users, f, indent=4)
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"status": "server running"}), 200
-
-# API login
-@app.route("/login", methods=["POST"])
+# Login
+@app.route("/", methods=["GET", "POST"])
 def login():
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
-
-    users = load_users()
-
-    if not username or not password:
-        return jsonify({"status": "error", "message": "Missing username or password"}), 400
-
-    if username in users and users[username] == password:
-        return jsonify({"status": "success", "message": "Login successful"}), 200
-    else:
-        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+        users = load_users()
+        user = next((u for u in users if u["username"] == username), None)
+        if user and check_password_hash(user["password"], password):
+            session["admin"] = username
+            return redirect(url_for("admin_panel"))
+        flash("Invalid username or password")
+    return render_template("login.html")
 
 # Admin panel
-@app.route("/admin", methods=["GET", "POST"])
+@app.route("/admin")
 def admin_panel():
+    if "admin" not in session:
+        return redirect(url_for("login"))
     users = load_users()
-    if request.method == "POST":
-        action = request.form.get("action")
-        username = request.form.get("username")
-        password = request.form.get("password")
-
-        if action == "add":
-            users[username] = password
-        elif action == "delete":
-            users.pop(username, None)
-        elif action == "update":
-            if username in users:
-                users[username] = password
-
-        save_users(users)
-        return redirect(url_for("admin_panel"))
-
     return render_template("admin.html", users=users)
+
+# Add user
+@app.route("/add_user", methods=["GET", "POST"])
+def add_user():
+    if "admin" not in session:
+        return redirect(url_for("login"))
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+        users = load_users()
+        if any(u["username"] == username for u in users):
+            flash("User already exists")
+        else:
+            users.append({"username": username, "password": generate_password_hash(password)})
+            save_users(users)
+            flash("User added successfully")
+            return redirect(url_for("admin_panel"))
+    return render_template("add_user.html")
+
+# Logout
+@app.route("/logout")
+def logout():
+    session.pop("admin", None)
+    return redirect(url_for("login"))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
