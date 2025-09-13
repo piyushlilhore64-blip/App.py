@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <style>
+        body { font-family: Arial; background: #1e1e1e; color: #fff; }
+        table { width: 50%; margin-top: 20px; border-collapse: collapse; }
+        th, td { padding: 10px; border: 1px solid #444; text-align: left; }
+        input, button { padding: 5px; margin: 5px; }
+        .container { padding: 20px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>User Admin Panel</h1>
+    
+    <form id="addUserForm">
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Add User</button>
+    </form>
+
+    <table id="usersTable">
+        <thead>
+            <tr><th>ID</th><th>Username</th><th>Action</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+async function fetchUsers() {
+    const res = await fetch('/users');
+    const data = await res.json();
+    const tbody = document.querySelector('#usersTable tbody');
+    tbody.innerHTML = '';
+    data.forEach(user => {
+        const row = `<tr>
+            <td>${user.id}</td>
+            <td>${user.username}</td>
+            <td><button onclick="deleteUser(${user.id})">Delete</button></td>
+        </tr>`;
+        tbody.innerHTML += row;
+    });
+}
+
+async function deleteUser(id) {
+    await fetch('/delete/' + id, { method: 'DELETE' });
+    fetchUsers();
+}
+
+document.getElementById('addUserForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    await fetch('/register', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username, password })
+    });
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    fetchUsers();
+});
+
+fetchUsers();
+</script>
+</body>
+</html>
