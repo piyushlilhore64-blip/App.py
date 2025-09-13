@@ -1,4 +1,10 @@
-from flask import Flask, request, jsonify, session
+from flask import Flask, render_template
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return render_template("index.html")  # your admin panel HTMLfrom flask import Flask, request, jsonify, session
 from werkzeug.security import generate_password_hash, check_password_hash
 import json
 import os
