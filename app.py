@@ -1,74 +1,61 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
-import sqlite3
-import bcrypt
+from flask import Flask, request, jsonify, render_template, redirect, url_for
+import json
+import os
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey123"  # change this to something strong
-db_file = "users.db"
 
-# Initialize database
-def init_db():
-    conn = sqlite3.connect(db_file)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password_hash TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password_hash TEXT
-        )
-    """)
-    # Create default admin if none exists
-    admin = conn.execute("SELECT * FROM admins").fetchone()
-    if not admin:
-        default_pw = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-        conn.execute("INSERT INTO admins (username, password_hash) VALUES (?, ?)", ("admin", default_pw))
-    conn.commit()
-    conn.close()
+# Load users from JSON
+def load_users():
+    with open("users.json", "r") as f:
+        return json.load(f)
 
-init_db()
+def save_users(users):
+    with open("users.json", "w") as f:
+        json.dump(users, f, indent=4)
 
-# Admin login page
-@app.route('/admin-login', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "server running"}), 200
 
-        conn = sqlite3.connect(db_file)
-        admin = conn.execute("SELECT password_hash FROM admins WHERE username=?", (username,)).fetchone()
-        conn.close()
+# API login
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
 
-        if admin and bcrypt.checkpw(password.encode(), admin[0]):
-            session['admin'] = username
-            return redirect(url_for('admin_panel'))
-        return "Invalid admin credentials", 401
+    users = load_users()
 
-    return '''
-    <form method="POST">
-        <input name="username" placeholder="Admin Username">
-        <input type="password" name="password" placeholder="Password">
-        <button type="submit">Login</button>
-    </form>
-    '''
+    if not username or not password:
+        return jsonify({"status": "error", "message": "Missing username or password"}), 400
 
-# Admin panel (protected)
-@app.route('/')
+    if username in users and users[username] == password:
+        return jsonify({"status": "success", "message": "Login successful"}), 200
+    else:
+        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
+# Admin panel
+@app.route("/admin", methods=["GET", "POST"])
 def admin_panel():
-    if 'admin' not in session:
-        return redirect(url_for('admin_login'))
-    return render_template('index.html')
+    users = load_users()
+    if request.method == "POST":
+        action = request.form.get("action")
+        username = request.form.get("username")
+        password = request.form.get("password")
 
-# Logout
-@app.route('/logout')
-def logout():
-    session.pop('admin', None)
-    return redirect(url_for('admin_login'))
+        if action == "add":
+            users[username] = password
+        elif action == "delete":
+            users.pop(username, None)
+        elif action == "update":
+            if username in users:
+                users[username] = password
 
-# Rest of user management routes remain same
-# /users, /register, /delete/<id>, /login
+        save_users(users)
+        return redirect(url_for("admin_panel"))
+
+    return render_template("admin.html", users=users)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
