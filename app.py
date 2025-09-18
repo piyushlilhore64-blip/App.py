@@ -1,94 +1,88 @@
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+import json
+from datetime import datetime
+import os
 
-from database import SessionLocal, engine
-import models
+app = Flask(__name__)
+app.secret_key = "supersecretkey"  # Change this for production
 
-# Create tables if not exist
-models.Base.metadata.create_all(bind=engine)
+USERS_FILE = "users.json"
 
-app = FastAPI()
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=4)
 
+connections = []
 
-@app.get("/")
-def root():
-    return {"message": "✅ FastAPI server is running on Render!"}
+# ---------------- Admin Panel ----------------
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        users = load_users()
+        if username in users and users[username] == password and username.lower() == "admin":
+            session["admin"] = True
+            return redirect(url_for("admin_panel"))
+        else:
+            return "Invalid credentials or not admin", 401
+    return render_template("login.html")
 
+@app.route("/")
+def admin_panel():
+    if not session.get("admin"):
+        return redirect(url_for("login_page"))
+    users = load_users()
+    return render_template("index.html", users=users.keys(), connections=connections[-50:])
 
-# Register user with expiry time
-@app.post("/register")
-def register(username: str, password: str, minutes: int, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.username == username).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
+@app.route("/add_user", methods=["POST"])
+def add_user():
+    if not session.get("admin"):
+        return redirect(url_for("login_page"))
+    username = request.form.get("username")
+    password = request.form.get("password")
+    users = load_users()
+    if username in users:
+        return "User already exists", 400
+    users[username] = password
+    save_users(users)
+    return redirect(url_for("admin_panel"))
 
-    expiry = datetime.utcnow() + timedelta(minutes=minutes)
-    user = models.User(username=username, password=password, expiry=expiry)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {"message": "User created", "expiry": expiry}
+@app.route("/remove_user", methods=["POST"])
+def remove_user():
+    if not session.get("admin"):
+        return redirect(url_for("login_page"))
+    username = request.form.get("username")
+    users = load_users()
+    if username in users:
+        del users[username]
+        save_users(users)
+    return redirect(url_for("admin_panel"))
 
+# ---------------- HTTP Injector Login ----------------
+@app.route("/login_user", methods=["POST"])
+def login_user():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+    client_ip = request.remote_addr
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# Login with expiry check
-@app.post("/login")
-def login(username: str, password: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    users = load_users()
+    if username in users and users[username] == password:
+        msg = f"{timestamp} - {username} connected from {client_ip}"
+        connections.append(msg)
+        print(msg)
+        return jsonify({"status": "success", "message": "Login successful"}), 200
+    else:
+        return jsonify({"status": "fail", "message": "Invalid credentials"}), 401
 
-    if user.password != password:
-        raise HTTPException(status_code=401, detail="Invalid password")
-
-    if datetime.utcnow() > user.expiry:
-        raise HTTPException(status_code=403, detail="Account expired")
-
-    return {"message": "Login successful", "expiry": user.expiry}
-
-
-# Delete a user
-@app.delete("/delete-user/{username}")
-def delete_user(username: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    db.delete(user)
-    db.commit()
-    return {"message": f"User '{username}' deleted"}
-
-
-# List all users
-@app.get("/users")
-def list_users(db: Session = Depends(get_db)):
-    users = db.query(models.User).all()
-    return [
-        {
-            "username": user.username,
-            "expiry": user.expiry,
-            "expired": datetime.utcnow() > user.expiry
-        }
-        for user in users
-    ]
-
-
-# Renew (extend expiry) for a user
-@app.put("/renew/{username}")
-def renew_user(username: str, minutes: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user.expiry = datetime.utcnow() + timedelta(minutes=minutes)
-    db.commit()
-    db.refresh(user)
-    return {"message": f"User '{username}' renewed", "new_expiry": user.expiry}
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
