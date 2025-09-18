@@ -47,13 +47,13 @@ def login_page():
 
         if username in users and users[username] == password and username.lower() == "admin":
             session["admin"] = True
-            return redirect(url_for("admin_panel"))
+            return redirect(url_for("home"))
         else:
             return "Invalid credentials or not admin", 401
     return render_template("login.html")
 
 @app.route("/")
-def admin_panel():
+def home():
     if not session.get("admin"):
         return redirect(url_for("login_page"))
     users = load_users()
