@@ -1,6 +1,75 @@
-body { font-family: Arial, sans-serif; background: #111; color: #0f0; margin: 0; padding: 0; }
-.container { width: 80%; margin: auto; padding: 20px; }
-h1, h2 { color: #0ff; }
-input, button { padding: 10px; margin: 5px 0; width: 100%; }
-pre { background: #000; padding: 10px; border: 1px solid #0f0; }
-.user-list { margin-top: 20px; }
+/* Global styles */
+body {
+  font-family: Arial, sans-serif;
+  background: #121212;
+  color: #e0e0e0;
+  margin: 0;
+  padding: 20px;
+}
+
+/* Headings */
+h1, h2 {
+  color: #ffffff;
+  margin-bottom: 15px;
+}
+
+/* Links */
+a {
+  color: #90caf9;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Card style */
+.card {
+  background: #1e1e1e;
+  padding: 20px;
+  margin: 15px 0;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+/* Input fields */
+input {
+  width: 95%;
+  padding: 10px;
+  margin: 8px 0;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #2c2c2c;
+  color: #fff;
+  outline: none;
+}
+input:focus {
+  border-color: #90caf9;
+}
+
+/* Buttons */
+button {
+  background: #2979ff;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  margin: 10px 5px 0 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+button:hover {
+  background: #1565c0;
+}
+
+/* Message / status text */
+#msg {
+  margin-top: 10px;
+  color: #ff5252;
+}
+
+/* User list container */
+#users .card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
