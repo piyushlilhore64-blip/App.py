@@ -1,73 +1,80 @@
-from flask import Flask, request, jsonify
-import time
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+import os
+import pyrebase
+from datetime import datetime
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
-# Fake DB
-keys = {
-    "demo123": {"expiry": time.time() + 3600},  # 1 hour
+# Admin credentials
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "password123"
+
+# Firebase configuration
+firebaseConfig = {
+    "apiKey": "AIzaSyD4dkOn3oGJyJmo06ghnPDAqwa-K5inD8I",
+    "authDomain": "anytime-ecb4d.firebaseapp.com",
+    "databaseURL": "https://anytime-ecb4d-default-rtdb.firebaseio.com",
+    "projectId": "anytime-ecb4d",
+    "storageBucket": "anytime-ecb4d.firebasestorage.app",
+    "messagingSenderId": "351063324913",
+    "appId": "1:351063324913:web:c8f96a365ceeef4b859150",
+    "measurementId": "G-BZ4JHXSX8X"
 }
-maintenance_mode = False
 
-ADMIN_USER = "admin"
-ADMIN_PASS = "123456"
+firebase = pyrebase.initialize_app(firebaseConfig)
+db = firebase.database()
 
-@app.route("/admin/login", methods=["POST"])
-def admin_login():
-    data = request.json
-    if data.get("username") == ADMIN_USER and data.get("password") == ADMIN_PASS:
-        return jsonify({"status": "success"})
-    return jsonify({"status": "error", "message": "Invalid login"}), 401
+# ------------------ Routes ------------------ #
 
-@app.route("/add_key", methods=["POST"])
-def add_key():
-    data = request.json
-    key = data["key"]
-    duration = int(data["duration"])  # in seconds
-    keys[key] = {"expiry": time.time() + duration}
-    return jsonify({"status": "success", "key": key, "expiry": keys[key]["expiry"]})
+@app.route('/')
+def home():
+    if not session.get("admin"):
+        return redirect(url_for("login"))
 
-@app.route("/delete_key", methods=["POST"])
-def delete_key():
-    data = request.json
-    key = data["key"]
-    if key in keys:
-        del keys[key]
-        return jsonify({"status": "success", "key": key})
-    return jsonify({"status": "error", "message": "Key not found"}), 404
+    # Fetch all keys from Firebase
+    keys_data = db.child("keys").get().val()
+    total_keys = 0
+    active_keys = 0
+    expired_keys = 0
+    now = datetime.now()
 
-@app.route("/list_keys", methods=["GET"])
-def list_keys():
-    now = time.time()
-    response = {}
-    for k, v in keys.items():
-        response[k] = {
-            "expiry": v["expiry"],
-            "expired": now > v["expiry"]
-        }
-    return jsonify(response)
+    if keys_data:
+        total_keys = len(keys_data)
+        for key, value in keys_data.items():
+            valid_until = value.get("validity")
+            if valid_until:
+                # Parse stored date "DD-MM-YYYY HH:MM"
+                dt = datetime.strptime(valid_until, "%d-%m-%Y %H:%M")
+                if dt >= now and value.get("active", True):
+                    active_keys += 1
+                else:
+                    expired_keys += 1
 
-@app.route("/check_key", methods=["POST"])
-def check_key():
-    global maintenance_mode
-    if maintenance_mode:
-        return jsonify({"status": "error", "message": "Maintenance mode active"}), 503
+    return render_template('admin.html',
+                           total_keys=total_keys,
+                           active_keys=active_keys,
+                           expired_keys=expired_keys,
+                           keys_data=keys_data)
 
-    data = request.json
-    key = data["key"]
-    user = keys.get(key)
-    if not user:
-        return jsonify({"status": "error", "message": "Invalid key"}), 401
-    if time.time() > user["expiry"]:
-        return jsonify({"status": "error", "message": "Key expired"}), 403
-    return jsonify({"status": "success", "message": "Access granted"})
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
 
-@app.route("/maintenance", methods=["POST"])
-def toggle_maintenance():
-    global maintenance_mode
-    data = request.json
-    maintenance_mode = data.get("status", False)
-    return jsonify({"status": "success", "maintenance": maintenance_mode})
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['admin'] = True
+            return redirect(url_for('home'))
+        else:
+            flash('Invalid username or password', 'error')
+            return redirect(url_for('login'))
+    return render_template('login.html')
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+@app.route('/logout')
+def logout():
+    session.pop('admin', None)
+    return redirect(url_for('login'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
