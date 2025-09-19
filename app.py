@@ -1,106 +1,73 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
-import json
-from datetime import datetime
-import os
+from flask import Flask, request, jsonify
+import time
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"  # Change this in production
 
-USERS_FILE = "users.json"
+# Fake DB
+keys = {
+    "demo123": {"expiry": time.time() + 3600},  # 1 hour
+}
+maintenance_mode = False
 
-# ---------------- User Management ----------------
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        # Auto-create with default admin if missing
-        default_users = {"admin": "adm8n"}
-        save_users(default_users)
-        print("Created default users.json with admin:adm8n")
-        return default_users
+ADMIN_USER = "admin"
+ADMIN_PASS = "123456"
 
-    with open(USERS_FILE, "r") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            # Reset if file is broken
-            default_users = {"admin": "adm8n"}
-            save_users(default_users)
-            print("Fixed broken users.json, reset to admin:adm8n")
-            return default_users
+@app.route("/admin/login", methods=["POST"])
+def admin_login():
+    data = request.json
+    if data.get("username") == ADMIN_USER and data.get("password") == ADMIN_PASS:
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error", "message": "Invalid login"}), 401
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=4)
+@app.route("/add_key", methods=["POST"])
+def add_key():
+    data = request.json
+    key = data["key"]
+    duration = int(data["duration"])  # in seconds
+    keys[key] = {"expiry": time.time() + duration}
+    return jsonify({"status": "success", "key": key, "expiry": keys[key]["expiry"]})
 
-connections = []
+@app.route("/delete_key", methods=["POST"])
+def delete_key():
+    data = request.json
+    key = data["key"]
+    if key in keys:
+        del keys[key]
+        return jsonify({"status": "success", "key": key})
+    return jsonify({"status": "error", "message": "Key not found"}), 404
 
-# ---------------- Admin Panel ----------------
-@app.route("/login", methods=["GET", "POST"])
-def login_page():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "").strip()
-        users = load_users()
+@app.route("/list_keys", methods=["GET"])
+def list_keys():
+    now = time.time()
+    response = {}
+    for k, v in keys.items():
+        response[k] = {
+            "expiry": v["expiry"],
+            "expired": now > v["expiry"]
+        }
+    return jsonify(response)
 
-        # Debug info in logs
-        print("DEBUG USERS:", users)
-        print("LOGIN ATTEMPT:", username, password)
+@app.route("/check_key", methods=["POST"])
+def check_key():
+    global maintenance_mode
+    if maintenance_mode:
+        return jsonify({"status": "error", "message": "Maintenance mode active"}), 503
 
-        if username in users and users[username] == password and username.lower() == "admin":
-            session["admin"] = True
-            return redirect(url_for("home"))
-        else:
-            return "Invalid credentials or not admin", 401
-    return render_template("login.html")
+    data = request.json
+    key = data["key"]
+    user = keys.get(key)
+    if not user:
+        return jsonify({"status": "error", "message": "Invalid key"}), 401
+    if time.time() > user["expiry"]:
+        return jsonify({"status": "error", "message": "Key expired"}), 403
+    return jsonify({"status": "success", "message": "Access granted"})
 
-@app.route("/")
-def home():
-    if not session.get("admin"):
-        return redirect(url_for("login_page"))
-    users = load_users()
-    return render_template("index.html", users=users.keys(), connections=connections[-50:])
-
-@app.route("/add_user", methods=["POST"])
-def add_user():
-    if not session.get("admin"):
-        return redirect(url_for("login_page"))
-    username = request.form.get("username", "").strip()
-    password = request.form.get("password", "").strip()
-    users = load_users()
-    if username in users:
-        return "User already exists", 400
-    users[username] = password
-    save_users(users)
-    return redirect(url_for("admin_panel"))
-
-@app.route("/remove_user", methods=["POST"])
-def remove_user():
-    if not session.get("admin"):
-        return redirect(url_for("login_page"))
-    username = request.form.get("username", "").strip()
-    users = load_users()
-    if username in users:
-        del users[username]
-        save_users(users)
-    return redirect(url_for("admin_panel"))
-
-# ---------------- HTTP Injector Login ----------------
-@app.route("/login_user", methods=["POST"])
-def login_user():
-    data = request.get_json()
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    client_ip = request.remote_addr
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    users = load_users()
-    if username in users and users[username] == password:
-        msg = f"{timestamp} - {username} connected from {client_ip}"
-        connections.append(msg)
-        print(msg)
-        return jsonify({"status": "success", "message": "Login successful"}), 200
-    else:
-        return jsonify({"status": "fail", "message": "Invalid credentials"}), 401
+@app.route("/maintenance", methods=["POST"])
+def toggle_maintenance():
+    global maintenance_mode
+    data = request.json
+    maintenance_mode = data.get("status", False)
+    return jsonify({"status": "success", "maintenance": maintenance_mode})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
