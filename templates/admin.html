@@ -9,10 +9,11 @@
   <style>
     body { font-family: 'Inter', sans-serif; background: #f5f7fa; }
     .container { max-width: 500px; margin: 80px auto; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    h2 { text-align: center; margin-bottom: 20px; }
     .form-group { margin-bottom: 20px; }
-    .form-control, .form-check-input { width: 100%; padding: 10px 15px; border-radius: 6px; border: 1px solid #ddd; }
+    .form-control, .form-check-input, select { width: 100%; padding: 10px 15px; border-radius: 6px; border: 1px solid #ddd; }
     .radio-group { display: flex; gap: 20px; margin-top: 10px; }
-    .btn { padding: 10px 15px; border: none; border-radius: 6px; background: #4361ee; color: #fff; cursor: pointer; }
+    .btn { padding: 10px 15px; border: none; border-radius: 6px; background: #4361ee; color: #fff; cursor: pointer; width: 100%; }
     .form-result { margin-top: 15px; text-align: center; }
     .form-result.success { color: green; }
     .form-result.error { color: red; }
@@ -46,6 +47,14 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label for="activeStatus">Status</label>
+        <select id="activeStatus" class="form-control">
+          <option value="true" selected>Active</option>
+          <option value="false">Inactive</option>
+        </select>
+      </div>
+
       <button type="submit" class="btn"><i class="fas fa-plus"></i> Add Key</button>
       <div id="result" class="form-result"></div>
     </form>
@@ -60,10 +69,11 @@
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      
+
       const key = document.getElementById('key').value.trim();
       const validity = document.getElementById('validity').value;
       const access = document.querySelector('input[name="access"]:checked').value;
+      const active = document.getElementById('activeStatus').value === 'true';
 
       if (!key || !validity) return showResult('Please fill all fields', 'error');
 
@@ -79,7 +89,7 @@
         key: key,
         validity: formattedDate,
         access: access,
-        active: true,
+        active: active,
         addedTime: rgtime
       })
       .then(() => {
@@ -96,4 +106,4 @@
     }
   </script>
 </body>
-</html>
+  </html>
